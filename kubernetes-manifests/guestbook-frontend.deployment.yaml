@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: python-guestbook-frontend
+  labels:
+    app: python-guestbook
+    tier: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: python-guestbook
+      tier: frontend
+  template:
+    metadata:
+      labels:
+        app: python-guestbook
+        tier: frontend
+    spec:
+      initContainers:
+      - name: copy-appd-startup
+        image: rishikeshr/appd_python
+        command:
+        - cp
+        - -r
+        - /opt/appdynamics/.
+        - /opt/temp
+        volumeMounts:
+        - mountPath: /opt/temp
+          name: appd-agent-repo-python
+      containers:
+      - name: frontend
+        image: rishikeshr/python-guestbook-frontend
+        ports:
+        - name: http-server
+          containerPort: 8080
+        env:
+        - name: PORT
+          value: "8080"
+        - name: GUESTBOOK_API_ADDR
+          value: python-guestbook-backend:8080
+        - name: APPD_APP_NAME
+          value: "Guestbook"
+        - name: APPD_TIER_NAME
+          value: "guestbook-frontend"
+        - name: APPD_CONTROLLER_HOST
+          value: "[[ controller fqdn ]]"
+        - name: APPD_CONTROLLER_PORT
+          value: "8090"
+        - name: APPD_SSL_ENABLED
+          value: "false"
+        - name: APPD_ACCOUNT_NAME
+          value: "[[ appd account name ]]"
+        - name: APPD_ACCOUNT_ACCESS_KEY
+          value: "[[ appd account key]]"
+        - name: APPDYNAMICS_AGENT_NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: APP_ENTRY_POINT
+          value: " python front.py"
+        volumeMounts:
+          - name: agent-config
+            mountPath: /opt/appdynamics/agent.cfg
+            subPath: agent.cfg
+          - mountPath: /opt/appdynamics-python
+            name: appd-agent-repo-python
+        resources:
+          requests:
+            cpu: 600m
+            memory: 300Mi
+          limits:
+            cpu: 800m
+            memory: 800Mi
+      volumes:
+        - name: agent-config
+          configMap:
+            name: agent-config-python-fe
+        - emptyDir: {}
+          name: appd-agent-repo-python

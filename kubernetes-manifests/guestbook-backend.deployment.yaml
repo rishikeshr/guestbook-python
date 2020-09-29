@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: python-guestbook-backend
+  labels:
+    app: python-guestbook
+    tier: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: python-guestbook
+      tier: backend
+  template:
+    metadata:
+      labels:
+        app: python-guestbook
+        tier: backend
+    spec:
+      initContainers:
+      - name: init-db-ready
+        image: mongo:4
+        command: ['/bin/sh', '-c']
+        args:
+          - echo "Waiting for mongodb at python-guestbook-mongodb:27017 to go live before the BE..."; 
+          - until (mongo --host python-guestbook-mongodb:27017 >/dev/null) do echo "Waiting for connection for 2 sec."; sleep 2; done
+      - name: copy-appd-startup
+        image: rishikeshr/appd_python
+        command:
+        - cp
+        - -r
+        - /opt/appdynamics/.
+        - /opt/temp
+        volumeMounts:
+        - mountPath: /opt/temp
+          name: appd-agent-repo-python
+      containers:
+        - name: backend
+          image: rishikeshr/python-guestbook-backend
+          command: ["/bin/sh"]
+          args: ["-c", "/opt/appdynamics-python/run-with-agent.sh"]
+          ports:
+          - name: http-server
+            containerPort: 8080
+          env:
+          - name: PORT
+            value: "8080"
+          - name: GUESTBOOK_DB_ADDR
+            value: "python-guestbook-mongodb:27017"
+          - name: APPD_APP_NAME
+            value: "Guestbook"
+          - name: APPD_TIER_NAME
+            value: "guestbook-backend"
+          - name: APPD_CONTROLLER_HOST
+            value: "[[ controller fqdn ]]"
+          - name: APPD_CONTROLLER_PORT
+            value: "8090"
+          - name: APPD_SSL_ENABLED
+            value: "false"
+          - name: APPD_ACCOUNT_NAME
+            value: "[[ appd account name ]]"
+          - name: APPD_ACCOUNT_ACCESS_KEY
+            value: "[[ appd account key ]]"
+          - name: APPDYNAMICS_AGENT_NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: APP_ENTRY_POINT
+            value: " python back.py"
+          volumeMounts:
+            - name: agent-config
+              mountPath: /opt/appdynamics/agent.cfg
+              subPath: agent.cfg
+            - mountPath: /opt/appdynamics-python
+              name: appd-agent-repo-python
+          resources:
+            requests:
+              cpu: 600m
+              memory: 300Mi
+            limits:
+              cpu: 800m
+              memory: 800Mi
+      volumes:
+        - name: agent-config
+          configMap:
+            name: agent-config-python-be
+        - emptyDir: {}
+          name: appd-agent-repo-python
